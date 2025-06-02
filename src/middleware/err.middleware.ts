@@ -23,7 +23,6 @@ export class ErrorMiddleware implements IMiddleware<Context, NextFunction> {
         };
     }
 
-    // 获取 HTTP 状态码
     private getStatus(err: any): number {
         // 自定义错误状态码
         if (err.status && typeof err.status === 'number') {
