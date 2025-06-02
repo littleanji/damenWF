@@ -1,0 +1,221 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider     = "postgresql"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
+}
+
+model Tenant {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  startTime   DateTime @default(now())
+  endTime     DateTime
+  isActive    Boolean  @default(true)
+  isDel       Boolean  @default(false)
+
+  @@index([name], name: "tenant_name_idx")
+  @@index([isActive, isDel], name: "tenant_status_idx")
+  @@index([endTime], name: "tenant_end_time_idx")
+}
+
+model User {
+  id          String       @id @default(cuid())
+  username    String
+  name        String
+  password    String
+  email       String?
+  phone       String?
+  isAdmin     Boolean      @default(false)
+  tenantId    String?
+  roles       Role[]       @relation("UserRoles")
+  permissions Permission[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  isDel       Boolean      @default(false)
+
+  @@index([username], name: "user_username_idx")
+  @@index([tenantId, isDel], name: "user_tenant_status_idx")
+  @@index([email], name: "user_email_idx")
+  @@index([phone], name: "user_phone_idx")
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  tenantId    String?
+  users       User[]       @relation("UserRoles")
+  permissions Permission[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  isDel       Boolean      @default(false)
+
+  @@index([name], name: "role_name_idx")
+  @@index([tenantId, isDel], name: "role_tenant_status_idx")
+}
+
+model Menu {
+  id         String       @id @default(cuid())
+  name       String
+  path       String       @unique
+  icon       String?
+  order      Int          @default(0)
+  parent     Menu?        @relation("MenuChildren", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  parentId   String?
+  children   Menu[]       @relation("MenuChildren")
+  tenantId   String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  isDel      Boolean      @default(false)
+  permission Permission[]
+
+  @@index([path], name: "menu_path_idx")
+  @@index([tenantId, parentId], name: "menu_parent_idx")
+  @@index([order], name: "menu_order_idx")
+}
+
+model Permission {
+  id        String         @id @default(cuid())
+  type      PermissionType @default(USER)
+  userId    String?
+  roleId    String?
+  menuId    String
+  actions   Json?
+  dataScope Json?
+  tenantId  String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  isDel     Boolean        @default(false)
+  user      User?          @relation(fields: [userId], references: [id])
+  role      Role?          @relation(fields: [roleId], references: [id])
+  menu      Menu           @relation(fields: [menuId], references: [id])
+
+  @@unique([type, roleId, menuId], name: "type_roleId_menuId")
+  @@unique([type, userId, menuId], name: "type_userId_menuId")
+  @@unique([type, userId, roleId, menuId], name: "permission_unique_constraint")
+  @@index([userId, menuId], name: "permission_user_menu_idx")
+  @@index([roleId, menuId], name: "permission_role_menu_idx")
+  @@index([tenantId, isDel], name: "permission_tenant_status_idx")
+  @@index([menuId], name: "permission_menu_idx")
+}
+
+enum PermissionType {
+  USER
+  ROLE
+}
+
+model WorkflowDefinition {
+  id               String             @id @default(cuid())
+  tenantId         String?
+  name             String
+  description      String?
+  config           Json // 存储流程JSON配置
+  version          Int                @default(1) // 新增版本号
+  isActive         Boolean            @default(false) // 新增激活状态
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  isDel            Boolean            @default(false)
+  WorkflowInstance WorkflowInstance[]
+
+  @@unique([tenantId, name, version], name: "tenant_workflow_version_unique")
+  @@index([tenantId], name: "workflow_tenant_idx")
+  @@index([isActive], name: "workflow_active_idx")
+  @@index([isDel], name: "workflow_is_del_idx")
+  @@index([tenantId, isDel], name: "workflow_tenant_status_idx")
+}
+
+model WorkflowInstance {
+  id           String                 @id @default(cuid())
+  tenantId     String?
+  definition   WorkflowDefinition     @relation(fields: [definitionId], references: [id])
+  definitionId String
+  version      Int
+  status       InstanceStatus         @default(PENDING)
+  currentStep  String?
+  creatorId    String?
+  formData     Json?
+  attachments  String[]
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  isDel        Boolean                @default(false)
+  nodes        WorkflowNodeInstance[]
+  histories    WorkflowHistory[]
+
+  @@index([tenantId], name: "instance_tenant_idx")
+  @@index([creatorId], name: "instance_creator_idx")
+  @@index([status], name: "instance_status_idx")
+  @@index([isDel], name: "instance_is_del_idx")
+  @@index([tenantId, isDel], name: "instance_tenant_status_idx")
+}
+
+model WorkflowNodeInstance {
+  id         String           @id @default(cuid())
+  tenantId   String?
+  instance   WorkflowInstance @relation(fields: [instanceId], references: [id])
+  instanceId String
+  nodeId     String
+  status     NodeStatus
+  assignees  String[]
+  comments   String?
+  createdAt  DateTime         @default(now())
+  resolvedAt DateTime?
+  isDel      Boolean          @default(false)
+
+  @@index([tenantId], name: "node_tenant_idx")
+  @@index([instanceId], name: "node_instance_idx")
+  @@index([isDel], name: "node_is_del_idx")
+  @@index([tenantId, isDel], name: "node_tenant_status_idx")
+}
+
+model WorkflowHistory {
+  id         String           @id @default(cuid())
+  tenantId   String?
+  instance   WorkflowInstance @relation(fields: [instanceId], references: [id])
+  instanceId String
+  action     ActionType
+  operatorId String
+  comment    String?
+  data       Json?
+  createdAt  DateTime         @default(now())
+  isDel      Boolean          @default(false)
+
+  @@index([tenantId], name: "history_tenant_idx")
+  @@index([instanceId], name: "history_instance_idx")
+  @@index([isDel], name: "history_is_del_idx")
+  @@index([tenantId, isDel], name: "history_tenant_status_idx")
+}
+
+enum InstanceStatus {
+  PENDING // 审批中
+  APPROVED // 已通过
+  REJECTED // 已拒绝
+  CANCELLED // 已取消
+}
+
+enum NodeStatus {
+  PENDING // 待处理
+  APPROVED // 已同意
+  REJECTED // 已拒绝
+  RETURNED // 已退回
+}
+
+enum ActionType {
+  SUBMIT // 提交
+  APPROVE // 通过
+  REJECT // 拒绝
+  RETURN // 退回
+  TRANSFER // 转签
+}
