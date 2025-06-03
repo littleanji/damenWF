@@ -1,5 +1,6 @@
 import { Provide, Inject } from '@midwayjs/core';
 import { RedisService } from '@midwayjs/redis';
+import { BusinessError } from '../../common/error';
 
 @Provide()
 export class RedisServiceManage {
@@ -44,5 +45,35 @@ export class RedisServiceManage {
      */
     async setJson(key: string, value: any, ttl?: number): Promise<void> {
         await this.set(key, JSON.stringify(value), ttl);
+    }
+
+    /**
+     * 分布式锁
+     * @param lockKey 
+     * @param timeout 
+     * @returns 
+     */
+    async lock(lockKey: string, timeout = 5000): Promise<string> {
+            const lockValue = Date.now() + timeout + 1;
+            const acquired = await this.redisService.set(
+                lockKey,
+                lockValue,
+                'PX',
+                timeout,
+                'NX'
+            );
+    
+            if (acquired !== 'OK') {
+                throw new BusinessError('获取锁失败，流程正在处理中');
+            }
+            return lockValue.toString();
+        }
+    
+        /**
+         * 移除锁
+         * @param lockKey 
+         */
+    async unLock(lockKey: string) {
+        await this.redisService.del(lockKey);
     }
 }
